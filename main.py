@@ -7,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# Autoriser Flutter / Web / Mobile
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,39 +15,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Clé API Mistral
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
 @app.get("/")
 def root():
     return {"status": "online", "message": "Multi-TCG API ready"}
 
-
 @app.post("/analyze")
 async def analyze_card(file: UploadFile = File(...)):
-    # Lire l'image envoyée par Flutter
     image_bytes = await file.read()
-    print("Taille image_bytes:", len(image_bytes))
     image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-    print("Taille image_b64:", len(image_b64))
 
+    # IMPORTANT : data URL pour Pixtral
+    data_url = f"data:image/jpeg;base64,{image_b64}"
 
-    # Endpoint Mistral
     url = "https://api.mistral.ai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {MISTRAL_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    # Prompt + image
     payload = {
-        "model": "pixtral-12b",   # ✔ modèle correct
+        "model": "pixtral-12b",
         "messages": [
             {
                 "role": "user",
                 "content": [
                     {
-                        "type": "input_text",
+                        "type": "text",
                         "text": """
 Tu es un expert en cartes TCG (Pokémon, Yu-Gi-Oh, Magic).
 Analyse l’image et renvoie un JSON STRICTEMENT au format suivant :
@@ -67,8 +61,8 @@ Ne renvoie rien d’autre que ce JSON.
 """
                     },
                     {
-                        "type": "input_image",
-                        "image": image_b64   # ✔ format correct
+                        "type": "file",
+                        "file": data_url
                     }
                 ]
             }
@@ -76,11 +70,9 @@ Ne renvoie rien d’autre que ce JSON.
         "max_tokens": 500
     }
 
-    # Appel API Mistral
     response = requests.post(url, headers=headers, json=payload)
     result = response.json()
 
-    # Extraction du JSON renvoyé par Mistral
     try:
         content = result["choices"][0]["message"]["content"]
         parsed = json.loads(content)
@@ -91,8 +83,6 @@ Ne renvoie rien d’autre que ce JSON.
             "raw": result
         }
 
-
-# Render utilise une variable d'environnement PORT
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
