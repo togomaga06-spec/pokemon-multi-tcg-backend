@@ -28,7 +28,10 @@ def root():
 async def analyze_card(file: UploadFile = File(...)):
     # Lire l'image envoyée par Flutter
     image_bytes = await file.read()
+    print("Taille image_bytes:", len(image_bytes))
     image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+    print("Taille image_b64:", len(image_b64))
+
 
     # Endpoint Mistral
     url = "https://api.mistral.ai/v1/chat/completions"
