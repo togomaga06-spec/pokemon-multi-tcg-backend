@@ -1,8 +1,7 @@
 import os
-import base64
 import json
 import requests
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -17,18 +16,34 @@ app.add_middleware(
 
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
-@app.get("/")
-def root():
-    return {"status": "online", "message": "Multi-TCG API ready"}
-
-@app.post("/analyze")
-async def analyze_card(file: UploadFile = File(...)):
+# -----------------------------
+# 1) UPLOAD IMAGE TO MISTRAL
+# -----------------------------
+@app.post("/upload")
+async def upload_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
-    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
-    # IMPORTANT : data URL pour Pixtral
-    data_url = f"data:image/jpeg;base64,{image_b64}"
+    url = "https://api.mistral.ai/v1/files"
+    headers = {"Authorization": f"Bearer {MISTRAL_API_KEY}"}
 
+    files = {
+        "file": (file.filename, image_bytes, file.content_type)
+    }
+
+    response = requests.post(url, headers=headers, files=files)
+    result = response.json()
+
+    if "id" not in result:
+        return {"error": "Upload failed", "raw": result}
+
+    return {"file_id": result["id"]}
+
+
+# -----------------------------
+# 2) ANALYZE IMAGE WITH PIXTRAL
+# -----------------------------
+@app.post("/analyze")
+async def analyze_card(file_id: str = Form(...)):
     url = "https://api.mistral.ai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {MISTRAL_API_KEY}",
@@ -62,7 +77,7 @@ Ne renvoie rien d’autre que ce JSON.
                     },
                     {
                         "type": "file",
-                        "file": data_url
+                        "file_id": file_id
                     }
                 ]
             }
@@ -78,11 +93,12 @@ Ne renvoie rien d’autre que ce JSON.
         parsed = json.loads(content)
         return parsed
     except Exception:
-        return {
-            "error": "Invalid response from Mistral",
-            "raw": result
-        }
+        return {"error": "Invalid response from Mistral", "raw": result}
 
+
+# -----------------------------
+# RUN LOCAL
+# -----------------------------
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
